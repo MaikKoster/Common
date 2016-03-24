@@ -8,6 +8,21 @@
         Creates a standalone version of a script by copying the script to a new file and 
         adding all function definitions from the specified Modules.
 
+    .EXAMPLE
+    .\Create-StandaloneScript.ps1 -Path "C:\Working\ConfigMgr\TaskSequence\Import-TaskSequence.ps1" -Module "ConfigMgr"
+
+    Create a new standalone version of a PowerShell script
+
+    .EXAMPLE
+    .\Create-StandaloneScript.ps1 -Path "C:\Working\ConfigMgr\TaskSequence\Import-TaskSequence.ps1" -Module "ConfigMgr" -PassThru
+
+    Create a new standalone version ofa PowerShell script and return path to new file
+
+    .EXAMPLE
+    .\Create-StandaloneScript.ps1 -Path "C:\Working\ConfigMgr\TaskSequence\Import-TaskSequence.ps1" -Module "ConfigMgr" -Block "Process"
+
+    Create a new standalone version of a PowerShell script but copy the functions to the Process block instead of the Begin block
+
     .LINK
         http://maikkoster.com/
         https://github.com/MaikKoster/Common/blob/master/Tools/Create-StandaloneScript.ps1

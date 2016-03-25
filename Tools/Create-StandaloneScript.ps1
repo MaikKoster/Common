@@ -37,6 +37,7 @@
         Version History:
             1.0 - 24.03.2016 - Published script
             1.1 - 25.02.2016 - Added support for #Requires
+                             - Replaced Alias
 
 
         TODO: Add support for multiple Import-Command and #Requires entries
@@ -85,7 +86,7 @@ Process {
         $Filename = Split-Path $OriginalScript -Leaf
         $ScriptCopy = Join-Path -Path $NewPath -ChildPath $Filename
         Write-Verbose "Prepare path and name for script copy at '$ScriptCopy'."
-        if (!(Test-Path ($NewPath))){New-Item -Path $NewPath -ItemType Directory}
+        if (-not(Test-Path ($NewPath))){New-Item -Path $NewPath -ItemType Directory}
 
         # Get the script content as scriptblock
         Write-Verbose "Parse original script."
@@ -127,7 +128,7 @@ Process {
         #}
 
         # Export Script
-        if (!([string]::IsNullOrEmpty($ScriptText))) {
+        if (-not([string]::IsNullOrEmpty($ScriptText))) {
             if (Test-Path $ScriptCopy) {
                 Remove-Item $ScriptCopy -Force
             }
@@ -186,11 +187,11 @@ Begin {
             [System.Text.StringBuilder]$StringBuilder = New-Object System.Text.StringBuilder
             $Count = 0
             $Script.ToString().Split("`n") | 
-                foreach {
+                ForEach-Object {
                     $Count++
-                    if (!($ImportModuleCommands.ContainsValue($Count))) {
+                    if (-not($ImportModuleCommands.ContainsValue($Count))) {
                         foreach ($ModuleName In $Module) {
-                            if (!(($_.Contains("Requires")) -and  ($_.Contains($ModuleName)))) {
+                            if (-not(($_.Contains("Requires")) -and  ($_.Contains($ModuleName)))) {
                                 $StringBuilder.Append($_) | Out-Null
                             }
                         }
@@ -369,7 +370,7 @@ Begin {
                     if ($ASTCommand.InvocationOperator -ne "Ampersand") {
                         $Command = $ASTCommand.CommandElements[0]
                         if ($Command.Value -ne $null) {
-                            if (!($ScriptCommands.ContainsKey($Command.Value))) {
+                            if (-not($ScriptCommands.ContainsKey($Command.Value))) {
                                 # Check if it's a Module command
                                 if ($ModuleCommands | Where-Object {$_.Name -eq $Command}) {
                                     Write-Verbose "Found new command '$Command'."
@@ -405,7 +406,7 @@ Begin {
             [System.Text.StringBuilder]$StringBuilder = New-Object System.Text.StringBuilder
 
             # Get Command by name 
-            if (($PSCmdLet.ParameterSetName -eq "Name") -and (!([string]::IsNullOrEmpty($Name)))) {
+            if (($PSCmdLet.ParameterSetName -eq "Name") -and (-not([string]::IsNullOrEmpty($Name)))) {
                 $Command = Get-Command $Name
             }
 

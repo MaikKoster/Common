@@ -31,14 +31,16 @@
         Copyright (c) 2016 Maik Koster
 
         Author:  Maik Koster
-        Version: 1.0
-        Date:    24.03.2016
+        Version: 1.1
+        Date:    25.03.2016
 
         Version History:
             1.0 - 24.03.2016 - Published script
+            1.1 - 25.02.2016 - Added support for #Requires
+                             - Replaced Alias
 
 
-        TODO: Add support for #Requires
+        TODO: Add support for multiple Import-Command and #Requires entries
 
 #>
 [CmdLetBinding(SupportsShouldProcess)]
@@ -84,7 +86,7 @@ Process {
         $Filename = Split-Path $OriginalScript -Leaf
         $ScriptCopy = Join-Path -Path $NewPath -ChildPath $Filename
         Write-Verbose "Prepare path and name for script copy at '$ScriptCopy'."
-        if (!(Test-Path ($NewPath))){New-Item -Path $NewPath -ItemType Directory}
+        if (-not(Test-Path ($NewPath))){New-Item -Path $NewPath -ItemType Directory}
 
         # Get the script content as scriptblock
         Write-Verbose "Parse original script."
@@ -126,7 +128,7 @@ Process {
         #}
 
         # Export Script
-        if (!([string]::IsNullOrEmpty($ScriptText))) {
+        if (-not([string]::IsNullOrEmpty($ScriptText))) {
             if (Test-Path $ScriptCopy) {
                 Remove-Item $ScriptCopy -Force
             }
@@ -142,7 +144,7 @@ Process {
 }
 
 Begin {
-    # Removes the "Import-Module" commands from the supplied script.
+    # Removes the "Import-Module" and Requires -Modules commands from the supplied script.
     # Only the Modules specified with the Module parameter will be removed.
     function Remove-ImportModuleCommand {
         [CmdLetBinding()]
@@ -168,24 +170,31 @@ Begin {
                 $ASTCommands = $AST.FindAll({$args[0] -is [System.Management.Automation.Language.CommandAst]}, $true) 
 
                 Foreach ($ASTCommand in $ASTCommands) {
-                    $Command = $ASTCommand.CommandElements[0]
-                    if ($Command.Value -ne $null) {
-                        if (($Command.Value -eq "Import-Module") -or ($Command.Value -eq "ipmo")) {
-                            if ($Module.Contains($Command.Parent.CommandElements[1].Value)) {
-                                $ImportModuleCommands.Add($Command.Parent.CommandElements[1].Value, $Command.Extent.StartLineNumber)
+                    if ($ASTCommand.InvocationOperator -ne "Ampersand") {
+                        $Command = $ASTCommand.CommandElements[0]
+                        if ($Command.Value -ne $null) {
+                            if (($Command.Value -eq "Import-Module") -or ($Command.Value -eq "ipmo")) {
+                                if ($Module.Contains($Command.Parent.CommandElements[1].Value)) {
+                                    $ImportModuleCommands.Add($Command.Parent.CommandElements[1].Value, $Command.Extent.StartLineNumber)
+                                }
                             }
-                        }
-                    } 
+                        } 
+                    }
                 }
             }
 
+            # Replace Import-Module commands and #Requires entries
             [System.Text.StringBuilder]$StringBuilder = New-Object System.Text.StringBuilder
             $Count = 0
             $Script.ToString().Split("`n") | 
-                foreach {
+                ForEach-Object {
                     $Count++
-                    if (!($ImportModuleCommands.ContainsValue($Count))) {
-                        $StringBuilder.Append($_) | Out-Null
+                    if (-not($ImportModuleCommands.ContainsValue($Count))) {
+                        foreach ($ModuleName In $Module) {
+                            if (-not(($_.Contains("Requires")) -and  ($_.Contains($ModuleName)))) {
+                                $StringBuilder.Append($_) | Out-Null
+                            }
+                        }
                     } else {
                         $ModuleName = ($ImportModuleCommands.GetEnumerator() | Where-Object {$_.Value -eq $Count})
                         Write-Verbose "Remove 'Import-Module $($ModuleName.Name)'."
@@ -228,7 +237,7 @@ Begin {
             if ($ScriptCommands.Count -gt 0) {
             
                 [System.Text.StringBuilder]$ScriptText = New-Object System.Text.StringBuilder
-                $ScriptText.Append($Script.ToString())
+                $ScriptText.Append($Script.ToString()) | Out-Null
                 
                 # Fix "Block" parameter, if "None" is specified, but Blocks do exist
                 if ($Block -eq "None") {
@@ -272,10 +281,10 @@ Begin {
                     }
                 } else {
                     # Get position of first "{" 
-                    $StartPos = $Script.ToString().IndexOf("{", $StartPos) + 1
+                    $StartPos = ($Script.ToString()).IndexOf("{", $StartPos) + 1
                 }
     
-                # Get a list of script commands. 
+                # Copy the script commands to the script copy. 
                 # Need to keep this out of the loop as the enumerator would fail when updating the hashtable
                 [string[]]$Commands = $ScriptCommands.Keys
                 foreach ($Command in $Commands) {
@@ -284,14 +293,14 @@ Begin {
                         if ($ModuleCommand -ne $null) {
                             $NewCommand = Get-CommandBody -Command $ModuleCommand
                             Write-Verbose "Copy command '$Command'."
-                            $ScriptText.Insert($StartPos, $NewCommand)
+                            $ScriptText.Insert($StartPos, $NewCommand) | Out-Null
                             $StartPos += $NewCommand.Length
                             $ScriptCommands.Item($Command) = $true
                         }
                     }
                 }
 
-                [PSCustomObject]@{Script = [scriptblock]::Create($ScriptText); ScriptCommands = $ScriptCommands}
+                [PSCustomObject]@{Script = [scriptblock]::Create($ScriptText.ToString()); ScriptCommands = $ScriptCommands}
             }
         }
     }
@@ -358,16 +367,18 @@ Begin {
                 $ASTCommands = $AST.FindAll({$args[0] -is [System.Management.Automation.Language.CommandAst]}, $true) 
 
                 Foreach ($ASTCommand in $ASTCommands) {
-                    $Command = $ASTCommand.CommandElements[0]
-                    if ($Command.Value -ne $null) {
-                        if (!($ScriptCommands.ContainsKey($Command.Value))) {
-                            # Check if it's a Module command
-                            if ($ModuleCommands | Where-Object {$_.Name -eq $Command}) {
-                                Write-Verbose "Found new command '$Command'."
-                                $ScriptCommands.Add($Command.Value, $false)
-                            } 
-                        }
-                    } 
+                    if ($ASTCommand.InvocationOperator -ne "Ampersand") {
+                        $Command = $ASTCommand.CommandElements[0]
+                        if ($Command.Value -ne $null) {
+                            if (-not($ScriptCommands.ContainsKey($Command.Value))) {
+                                # Check if it's a Module command
+                                if ($ModuleCommands | Where-Object {$_.Name -eq $Command}) {
+                                    Write-Verbose "Found new command '$Command'."
+                                    $ScriptCommands.Add($Command.Value, $false)
+                                } 
+                            }
+                        } 
+                    }
                 }
             }
 
@@ -395,7 +406,7 @@ Begin {
             [System.Text.StringBuilder]$StringBuilder = New-Object System.Text.StringBuilder
 
             # Get Command by name 
-            if (($PSCmdLet.ParameterSetName -eq "Name") -and (!([string]::IsNullOrEmpty($Name)))) {
+            if (($PSCmdLet.ParameterSetName -eq "Name") -and (-not([string]::IsNullOrEmpty($Name)))) {
                 $Command = Get-Command $Name
             }
 

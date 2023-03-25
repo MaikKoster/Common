@@ -192,7 +192,7 @@ Begin {
                     if (-not($ImportModuleCommands.ContainsValue($Count))) {
                         foreach ($ModuleName In $Module) {
                             if (-not(($_.Contains("Requires")) -and  ($_.Contains($ModuleName)))) {
-                                $StringBuilder.Append($_) | Out-Null
+                                $StringBuilder.AppendLine($_) | Out-Null
                             }
                         }
                     } else {
